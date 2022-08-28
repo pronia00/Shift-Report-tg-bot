@@ -1,3 +1,5 @@
+import config
+
 from array import array
 from ast import Call
 from cgitb import handler, text
@@ -1030,7 +1032,7 @@ async def send_report(update: Update, context: ContextTypes) -> int:
     await query.answer()
 
     logger.info("User %s chose to send report", query.from_user.full_name)
-    chat = -322780644
+    chat = config.SURF_X_MORE_CHAT
 
     #await context.bot.send_chat_action(chat_id= chat, action=telegram.constants.ChatAction.TYPING)
     
@@ -1280,9 +1282,7 @@ def main() -> None:
     """Run the bot."""
 
     # Create the Application and pass it your bot's token.
-    application = Application.builder().token(
-        '5324103258:AAH-HFQc7k8lgoBfsbssRfb6urmwhpaqHbA'
-        ).build()
+    application = Application.builder().token(config.BOT_TOKEN).build()
 
     # ^ means "start of line/string"
     # $ means "end of line/string"
