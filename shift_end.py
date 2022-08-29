@@ -206,8 +206,9 @@ class FinanceReport:
 
 @dataclass 
 class withdrawal:
-    sum : float = 0
     comment : str = ''
+    sum : float = 0
+
 
 @dataclass 
 class Withdrawals:
@@ -216,9 +217,23 @@ class Withdrawals:
     def is_empty(self) -> bool:
         return len(self.data) < 1
     
-    def append_str(self, text : str):
-        new_entry = withdrawal()
+    def quantity(self) -> int: 
+        return len(self.data)
+
+    async def append_str(self, text : str) -> bool:
+        parsed_data = text.partition('-')
+        if parsed_data[0] == str: return False
+
+        new_entry = withdrawal(str(parsed_data[0]), float(parsed_data[2]))
+        await self.append(new_entry)
         
+        return True
+
+    async def append(self, comment : str, sum : float):
+        self.data.append(withdrawal(comment, sum))
+    
+    async def append(self, entry : withdrawal):
+        self.data.append(entry)
 
 # storage for shift report data
 @dataclass
@@ -242,7 +257,7 @@ class ShiftReportClass:
     finance : FinanceReport = FinanceReport()
 
     # date & time
-    date : str = '00:00' # TO DO change to <date : datetime.date>
+    date : str = '01.01.01' # TO DO change to <date : datetime.date>
     is_date : bool = False
 
     # comment
@@ -477,7 +492,7 @@ async def date_menu (update: Update, context:ContextTypes) -> int:
     query = update.callback_query
     await query.answer()
 
-    logger.info("User %s entered date menu", query.from_user.full_name)
+    logger.info(f"User {query.from_user.full_name} entered date menu")
     
     today_date_time = datetime.now().strftime("Cейчас: %d/%m %H:%M") 
 
@@ -487,12 +502,11 @@ async def date_menu (update: Update, context:ContextTypes) -> int:
         [InlineKeyboardButton(_b_manual_date, callback_data = "manual_date")]
     ]
 
-    text = "Выбери дату заполнения отчета: \n\n"
+    text = "Заполни дату отчета: \n\n"
     if "date" in context.user_data:
-        #_date_time = context.user_data["date"]
         _date_time = shift_report.date
     else :
-        _date_time = datetime.now().strftime("%d/%m \n%H:%M")
+        _date_time = datetime.today().date()
     
     text += "Текущее значение : \n" + _date_time
 
@@ -511,10 +525,8 @@ async def auto_date (update: Update, context:ContextTypes) -> int:
     query = update.callback_query
     await query.answer()
 
-    logger.info("User %s chose auto date", query.from_user.full_name)
-    
-    #context.user_data["date"] = datetime.now().strftime("%d/%m %H:%M")
-    
+    logger.info(f"User {query.from_user.full_name} chose <auto> date input")
+        
     shift_report.date = datetime.today().date()
     shift_report.is_date = True
 
@@ -526,14 +538,12 @@ async def date_input(update: Update, context:ContextTypes) -> int:
     """read text & write into user_data"""
     
     user = update.message.from_user
-    logger.info("User %s entered %s", user.full_name, update.message.text)
+    logger.info(f"User {update.effective_user.full_name} entered: {update.message.text}")
 
-    #context.user_data["date"] = update.message.text
     shift_report.date = update.message.text
     shift_report.is_date = True
 
     await draw_main_menu(update, context, edit = False)
-    
     return SE_MENU
 
 async def manual_date (update: Update, context:ContextTypes) -> int: 
@@ -541,19 +551,19 @@ async def manual_date (update: Update, context:ContextTypes) -> int:
     
     query = update.callback_query
     await query.answer()
+    
+    logger.info(f"User {query.from_user.full_name} chose manual input")
 
     context.user_data["parent_menu"] = SE_DATE
-    logger.info("User %s chose manual input", query.from_user.full_name)
 
     await query.edit_message_text(
-        text = "Введи дату и время заполнения : ", 
+        text = "Введи дату заполнения отчета: ", 
         reply_markup 
-            = InlineKeyboardMarkup([[InlineKeyboardButton(_b_return, callback_data="return")]])
+            = InlineKeyboardMarkup([[InlineKeyboardButton(_b_return, callback_data='return')]])
     )
     return SE_DATE
 
 # Finance
-
 async def finance_text():
     sr = shift_report
 
@@ -572,6 +582,7 @@ async def finance_text():
 
 async def finance_kb():
     finance = shift_report.finance
+
     _keyboard_finance = [
         [
                 InlineKeyboardButton(_check_button(_b_cash, finance.is_cash),  callback_data = "cash"),
@@ -601,12 +612,12 @@ async def finance_kb():
 
 async def finance_menu (update: Update, context:ContextTypes) -> int: 
     """Starts the date menu conversation """
+    logger.info(f"User {query.from_user.full_name} entered finance report menu" )
 
     query = update.callback_query
     await query.answer()
 
     data = ["cash", "cards", "reciepts", "cash_returns", "cards_returns", "incass", "change_money", "extra_money"]
-    logger.info(f"User {query.from_user.full_name} entered finance report menu" )
 
     await query.edit_message_text(
         await finance_text(),
@@ -616,10 +627,10 @@ async def finance_menu (update: Update, context:ContextTypes) -> int:
 
 async def draw_finance_menu (update: Update, context:ContextTypes) -> int: 
     """ Shows data values and send finance menu keyboard """    
-
+    logger.info("Drawing finance menu")
+    logger.info(f"User {update.effective_user.full_name} entered finance report menu")
+    
     data = ["cash", "cards", "reciepts", "cash_returns", "cards_returns", "incass", "change_money", "extra_money"]
-    logger.info("Draw finance menu")
-    logger.info("User %s entered finance report menu", update.message.from_user.full_name)
 
     # parent const for return button navigation
     context.user_data ["parent_menu"] = SE_MENU
@@ -673,7 +684,6 @@ async def finance_field_input (update: Update, context: ContextTypes) -> int:
     else: 
         logger.info("User %s entered %s = %s", user.full_name, context.user_data["finance_entry"], update.message.text)
         
-
         entry = context.user_data["finance_entry"]
         data = float(update.message.text)
 
@@ -757,6 +767,7 @@ async def comment_menu(update: Update, context: ContextTypes) -> int:
     )
     return SE_COMMENT
 
+
 async def read_comment(update: Update, context: ContextTypes) -> int:
     """reads comment from last user's message"""
     
@@ -767,7 +778,6 @@ async def read_comment(update: Update, context: ContextTypes) -> int:
     await draw_main_menu(update, context, edit=False)
 
     return SE_MENU
-
 
 # Writeoffs
 async def writeoffs_menu(update: Update, context: ContextTypes) -> int: 
@@ -803,7 +813,6 @@ async def read_writeoffs(update: Update, context: ContextTypes) -> int:
 
     return SE_MENU
 
-
 # Withdrawals
 async def withdrawals_menu(update: Update, context: ContextTypes) -> int: 
     query = update.callback_query
@@ -838,7 +847,6 @@ async def read_withdrawals(update: Update, context: ContextTypes) -> int:
 
     return SE_MENU
 
-
 # Stoplist
 async def stoplist_menu(update: Update, context: ContextTypes) -> int: 
     query = update.callback_query
@@ -871,8 +879,6 @@ async def read_stoplist(update: Update, context: ContextTypes) -> int:
     await draw_main_menu(update, context, edit=False)
 
     return SE_MENU  
-
-
 
 # Leftovers
 async def leftovers_menu(update: Update, context: ContextTypes) -> int:
