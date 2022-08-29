@@ -296,7 +296,7 @@ def new_shift_report() -> ShiftReportClass :
 # starts shift end conversation
 
 async def start_conversation_menu_from_query(update:Update, context: ContextTypes):
-    await start_shift_end_conversation_menu(update, context, from_query = True)
+    await start_shift_end_conversation_menu(update, context, from_query = False)
     return SE_MENU
 
 async def start_shift_end_conversation_menu (update: Update, context: ContextTypes, from_query : bool = False) -> int:
@@ -327,18 +327,18 @@ async def start_shift_end_conversation_menu (update: Update, context: ContextTyp
 
     # if report is new, init report and open main report menu
     
-    logger.info(f'initialized = {shift_report._initialized}')
+    logger.info(f'Shift report #{db.index} initialized by {update.effective_user.full_name}')
     logger.info(f'date = {shift_report._date_created}')
     
     _keyboard = []
 
-    if not shift_report._initialized:
+    if not shift_report._initialized or not shift_report._date_created == datetime.today().date():
         logger.info(f"Creating new report for {update.effective_user.full_name}...")
         
         shift_report = await db.get_new_report()
 
         await shift_report._init_report(context, update)
-        await draw_main_menu(update, context, edit = from_query)
+        await draw_main_menu(update, context, edit = False)
         
         return_menu = SE_MENU
 
@@ -360,7 +360,7 @@ async def start_shift_end_conversation_menu (update: Update, context: ContextTyp
 
             else:
                 text = f'{shift_report._created_by} уже начал начал заполнять отчет, можешь продолжить его, или начать новый'
-
+    
         # if report is already sent today
         elif shift_report._is_sent:
 
@@ -376,7 +376,11 @@ async def start_shift_end_conversation_menu (update: Update, context: ContextTyp
             else:
                 text = f'{shift_report._created_by} уже отправил отчет, можешь открыть его, или начать новый'
 
-        await draw_menu(text, _keyboard, update, context, from_query)
+        await draw_menu(text, _keyboard, update, context, edit = False)
+
+    else:
+        logger.info("Can't init new menu...")
+        
 
     return return_menu
 
