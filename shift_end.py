@@ -326,7 +326,7 @@ async def start_shift_end_conversation_menu (update: Update, context: ContextTyp
     return_menu = SE_MENU
 
     # if report is new, init report and open main report menu
-    
+
     logger.info(f'Shift report #{db.index} initialized by {update.effective_user.full_name}')
     logger.info(f'date = {shift_report._date_created}')
     
@@ -379,9 +379,8 @@ async def start_shift_end_conversation_menu (update: Update, context: ContextTyp
         await draw_menu(text, _keyboard, update, context, edit = False)
 
     else:
-        logger.info("Can't init new menu...")
+        logger.info("Can't init new menu...all init conditions were skipped")
         
-
     return return_menu
 
 async def init_shift_report_menu(update: Update, context: ContextTypes):
@@ -465,7 +464,7 @@ async def draw_main_menu (update: Update, context: ContextTypes, edit: bool):
             #reply_markup = InlineKeyboardMarkup(_keyboard_shift_end_main)
             reply_markup = await _check_buttons_main_keyboard(update, context)
         )
-    else : 
+    else :
         await update.message.reply_text(
             text, 
             reply_markup = await _check_buttons_main_keyboard(update, context)
@@ -516,7 +515,7 @@ async def auto_date (update: Update, context:ContextTypes) -> int:
     
     #context.user_data["date"] = datetime.now().strftime("%d/%m %H:%M")
     
-    shift_report.date = datetime.now().strftime("%d/%m %H:%M")
+    shift_report.date = datetime.today().date()
     shift_report.is_date = True
 
     await draw_main_menu(update, context, edit = True)
@@ -552,7 +551,6 @@ async def manual_date (update: Update, context:ContextTypes) -> int:
             = InlineKeyboardMarkup([[InlineKeyboardButton(_b_return, callback_data="return")]])
     )
     return SE_DATE
-
 
 # Finance
 
@@ -739,7 +737,6 @@ async def finance_read_all(update: Update, context:ContextTypes) -> int:
         reply_markup= InlineKeyboardMarkup([[InlineKeyboardButton(_b_return, callback_data="return")]])
     )
     return SE_FINANCE
-
 
 # Comment
 async def comment_menu(update: Update, context: ContextTypes) -> int: 
@@ -1205,11 +1202,11 @@ async def start_command(update: Update, context: ContextTypes):
     
     logger.info(f"\start {update.effective_user.full_name} entered \start command")
 
-    start_message = 'Привет :3\n\n'
-    start_message += 'Этот бот поможет тебе сделать отчет закрытия смены, и поделиться им с командой\n'
-    start_message += 'После заполнения отчет будет отправлен в ваш общий чат\n\n'
-    start_message += 'Что бы начать - нажми /shift_end \n'
-    start_message += 'Что бы закрыть отчет - /сancel'
+    msg = 'Привет!\n\n'
+    msg += 'Этот бот поможет тебе заполнить отчет закрытия смены, и поделиться им с командой\n\n'
+    msg += 'После заполнения отчет будет отправлен в ваш общий чат\n\n'
+    msg += 'Начать - /shift_end \n'
+    msg += 'Закрыть отчет - /cancel'
     
     '''
     keyboard = InlineKeyboardMarkup([
@@ -1218,18 +1215,30 @@ async def start_command(update: Update, context: ContextTypes):
         ]
     ])
     '''
-    await update.message.reply_text(text = start_message)
+    await update.message.reply_text(msg)
 
 
 async def help_command(update: Update, context: ContextTypes):
+    logger.info(f"/help - user {update.effective_user.full_name} entered /help command")
+
+    msg =  'Бот закрытия смены, который должен сделать жизнь чуть чуть проще\n\n'
+    msg += 'Если нужна какая то помощь, или фидбек, пиши сюды: @fruqube\n\n'
+    msg += 'Проект где на уровне альфы, так что пользуйся осторожно\n'
+
+    await update.message.reply_text(msg)
+
+# if user tries /cancel out of conversation
+async def cancel_command(update: Update, context: ContextTypes):
+    logger.info(f'/cancel - user {update.effective_user.full_name} entered /cancel out of conversation')
+
+    msg =  'Эта команда работает только во время заполнения отчета /shift_end \nТак что сейчас ничего не произошло'
+    await update.message.reply_text(msg)
+
+async def unknown_command(update: Update, context: ContextTypes):
+    logger.info(f'{update.message.text} - user {update.effective_user.full_name} entered unknown command')
     
-    logger.info(f"\help User {update.effective_user.full_name} entered \help command")
-
-    start_message = 'Бот закрытия смены, который должен сделать жизнь чуть чуть проще\n'
-    start_message += 'Если нужна какая то помощь, или фидбек, пиши сюды: @fruqube\n\n'
-    start_message += 'Проект где на уровне альфы, так что пользуйся осторожно\n'
-
-    await update.message.reply_text(text = start_message)
+    msg =  'Я не знаю эту комманду, нажми /help, если не уверен что делать'
+    await update.message.reply_text(msg)
 
 # return to menu switch
 async def return_button(update: Update, context:ContextTypes) -> int:
@@ -1274,13 +1283,12 @@ async def cancel(update: Update, context:ContextTypes) -> int:
     """cancel report"""
     logger.info("User %s canceled report menu", update.effective_user.full_name)
 
-    await update.message.reply_text("Ты вышел из меню заполнения отчета, он сохранен, но не отправлен/n Если решишь продолжить заполнение, просто снова нажми /shift_end")
+    await update.message.reply_text("Ты вышел из меню заполнения отчета, он сохранен, но не отправлен\nЕсли решишь продолжить заполнение, просто снова нажми /shift_end")
 
     return ConversationHandler.END
 
 async def __shift_end_report__ () :
     return 0
-
 
 def main() -> None: 
     """Run the bot."""
@@ -1302,8 +1310,7 @@ def main() -> None:
         states= {
             SE_INIT : [
                 CallbackQueryHandler(init_shift_report_menu, pattern="^" + "create_new_report" + "$"),
-                CallbackQueryHandler(continue_shift_report_menu, pattern="^" + "continue_report" + "$"),
-                CallbackQueryHandler(cancel, pattern="^" + "return" + "$")
+                CallbackQueryHandler(continue_shift_report_menu, pattern="^" + "continue_report" + "$")
             ],
             SE_MENU : [
                 CallbackQueryHandler(finance_menu, pattern = "^" + "finance" + "$"),
@@ -1351,9 +1358,10 @@ def main() -> None:
                 MessageHandler(filters.TEXT & (~filters.COMMAND), read_stoplist)
             ]
         },
-        
         fallbacks=[
             CallbackQueryHandler(return_button, pattern="^" + "return" + "$"),
+
+            CommandHandler('shift_end', start_shift_end_conversation_menu),
             CommandHandler("cancel", cancel)
         ],
     )
@@ -1361,10 +1369,12 @@ def main() -> None:
     # on different commands - answer in Telegram
     application.add_handler(CommandHandler('start', start_command))
     application.add_handler(CommandHandler('help', help_command))
+    #application.add_handler(MessageHandler(filters.Command, unknown_command))
     #application.add_handler(CommandHandler('test', test))
 
     #application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), echo))
     application.add_handler(end_conv_handler)
+    application.add_handler(CommandHandler('cancel', cancel_command))
      # Run the bot until the user presses Ctrl-C
     application.run_polling()
 
