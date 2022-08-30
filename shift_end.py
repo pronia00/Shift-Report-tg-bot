@@ -1,3 +1,4 @@
+from socket import MsgFlag
 import config
 
 from array import array
@@ -213,6 +214,7 @@ class withdrawal:
 @dataclass 
 class Withdrawals:
     data : list[withdrawal] = field(default_factory=list)
+    _rewrite : bool = True
 
     def is_empty(self) -> bool:
         return len(self.data) < 1
@@ -222,7 +224,7 @@ class Withdrawals:
 
     async def append_str(self, text : str) -> bool:
         parsed_data = text.partition('-')
-        if parsed_data[0] == str: return False
+        if parsed_data[1] == '' and str(parsed_data[2]) == '': return False
 
         new_entry = withdrawal(str(parsed_data[0]), float(parsed_data[2]))
         await self.append(new_entry)
@@ -234,6 +236,22 @@ class Withdrawals:
     
     async def append(self, entry : withdrawal):
         self.data.append(entry)
+
+    async def set_to_zero(self):
+        self.data.clear()
+
+    def to_report_text(self) -> str:
+        text = ''
+        if len(self.data) <= 0:
+            text += '🗒️ <b> Изъятий за смену не было </b>\n'
+        else:
+            text += "🗒️ <b>Изъятия:</b>\n"
+            i = 1
+            for w in self.data:
+                text += f'\n          {i}. {w.comment} - {w.sum}р'
+                i = i + 1
+        
+        return text
 
 # storage for shift report data
 @dataclass
@@ -269,6 +287,8 @@ class ShiftReportClass:
     is_writeoffs : bool = False
 
     # withdrawals
+    _withdrawals : Withdrawals = Withdrawals()
+
     withdrawals : str = ''
     is_withdrawals : bool = False
 
@@ -317,31 +337,11 @@ async def start_conversation_menu_from_query(update:Update, context: ContextType
 async def start_shift_end_conversation_menu (update: Update, context: ContextTypes, from_query : bool = False) -> int:
     """Starts shift end conversation with main menu"""
 
-    user = update.effective_user.full_name
-    logger.info("User %s started the shift end converstaion", user)
-
     global shift_report
-
-    # situation 1 : date is today and report is sent:
-    #     -> message user that report is already sent for this date by user
-    #     -> ask to: 
-    #        - create new report for this date
-    #        - open existing report
-    #        - exit
-    # 
-    # situation 2 : date is today and report is not sent:
-    #     -> message that report already exists and created by user
-    #     -> ask to:
-    #         - create new report for this date
-    #         - open existing report
-    #         - exit
-    #
-    # situation 3 : date is not today -> init new report
-    #
     return_menu = SE_MENU
 
     # if report is new, init report and open main report menu
-
+    logger.info(f"User {update.effective_user.full_name} initialized shift end converstaion")
     logger.info(f'Shift report #{db.index} initialized by {update.effective_user.full_name}')
     logger.info(f'date = {shift_report._date_created}')
     
@@ -400,12 +400,11 @@ async def start_shift_end_conversation_menu (update: Update, context: ContextTyp
 
 async def init_shift_report_menu(update: Update, context: ContextTypes):
     logger.info("User %s initialised new report", update.effective_user.full_name)
+    
     global shift_report
-
     shift_report = await db.get_new_report()
 
     await shift_report._init_report(context, update)
-    
     await draw_main_menu(update, context, edit = True)
 
     return SE_MENU
@@ -508,7 +507,7 @@ async def date_menu (update: Update, context:ContextTypes) -> int:
     else :
         _date_time = datetime.today().date()
     
-    text += "Текущее значение : \n" + _date_time
+    text += "Текущее значение : \n" + str(_date_time)
 
     # parent const for return button navigation
     context.user_data ["parent_menu"] = SE_MENU
@@ -612,7 +611,7 @@ async def finance_kb():
 
 async def finance_menu (update: Update, context:ContextTypes) -> int: 
     """Starts the date menu conversation """
-    logger.info(f"User {query.from_user.full_name} entered finance report menu" )
+    logger.info(f"User {update.effective_user.full_name} entered finance report menu" )
 
     query = update.callback_query
     await query.answer()
@@ -814,35 +813,122 @@ async def read_writeoffs(update: Update, context: ContextTypes) -> int:
     return SE_MENU
 
 # Withdrawals
-async def withdrawals_menu(update: Update, context: ContextTypes) -> int: 
+
+async def pre_withdrawals_menu(update: Update, context: ContextTypes) -> int:
     query = update.callback_query
     await query.answer()
 
-    logger.info("User %s entered withdrawals menu", query.from_user.full_name)
+    logger.info("User %s entered pre withdrawals menu", query.from_user.full_name)
+
+    context.user_data["parent_menu"] = SE_MENU
+    msg : str = ''
+
+    if shift_report._withdrawals.quantity() > 0:
+        msg += 'Ты можешь добавить к ним новые, или перезаписать эти'
+
+        kb = [
+                [    InlineKeyboardButton('Добавить', callback_data='add')], 
+                [    InlineKeyboardButton('Перезаписать', callback_data='rewrite')]
+        ]
+        await draw_menu(msg, kb, update, context, edit = True)
+        return SE_WITHDRAWALS
+    
+    else: 
+        await withdrawals_input_menu(update, context) 
+    return SE_WITHDRAWALS
+
+async def withdrawals_set_rewrite(update: Update, context: ContextTypes) -> int:
+    query = update.callback_query
+    await query.answer()
+
+    logger.info(f"User {update.effective_user.full_name} choose to rewrite withdarawals")
+
+    shift_report._withdrawals._rewrite = True
+
+    await withdrawals_input_menu(update, context)
+    return SE_WITHDRAWALS
+
+async def withdrawals_set_append(update: Update, context: ContextTypes) -> int:
+    query = update.callback_query
+    await query.answer()
+
+    logger.info(f"User {update.effective_user.full_name} choose to edit withdarawals")
+
+    shift_report._withdrawals._rewrite = False
+    await withdrawals_input_menu(update, context)
+    return SE_WITHDRAWALS
+
+async def withdrawals_input_menu(update: Update, context: ContextTypes) -> int: 
+    query = update.callback_query
+    await query.answer()
+
+    logger.info("User %s entered withdrawals input menu", query.from_user.full_name)
 
     context.user_data["parent_menu"] = SE_MENU
 
-    text = "Отправь изьятия за смену в формате:  \n\n"
-    text += "Поставщик 1 - Сумма\n"
-    text += "Поставщик 2 - Сумма\n..."
-
+    msg = "Отправь изьятия за смену в формате:  \n\n"
+    msg += "Поставщик 1 - Сумма\n"
+    msg += "Поставщик 2 - Сумма\n...\n\n"
+    
     if shift_report.is_withdrawals:
-        text += "\n\nТекущие списания:\n" + shift_report.withdrawals
-        # тут можно узнать у пользователя, хочет ли он добавить что то к текущей записи, или переписать 
+        msg += "Текущие изъятия:\n"
+        
+        num = 1
+        for w in shift_report._withdrawals.data:
+            msg += f'{num}. {w.comment} - {w.sum}р \n'
+            num = num + 1
 
     await query.edit_message_text(
-        text, 
-        reply_markup= InlineKeyboardMarkup([[InlineKeyboardButton(_b_return, callback_data="return")]])
+        msg, 
+        reply_markup= InlineKeyboardMarkup([[
+            InlineKeyboardButton(_b_return, callback_data="return")
+        ]])
     )
     return SE_WITHDRAWALS
 
 async def read_withdrawals(update: Update, context: ContextTypes) -> int:
     """reads withdrawals from last user's message"""
-    
-    shift_report.withdrawals = update.message.text
-    shift_report.is_withdrawals = True
+    logger_msg = f"User {update.message.from_user.full_name} sent request to insert withdrawals:\n{update.message.text}"
+    logger.info(logger_msg)
 
-    logger.info("User %s entered:\n%s", update.message.from_user.full_name, shift_report.withdrawals)
+    shift_report.withdrawals = update.message.text
+    bad_lines : str = ''
+
+    temp = update.message.text.splitlines() 
+    
+    if shift_report._withdrawals._rewrite == True:
+        await shift_report._withdrawals.set_to_zero()
+        shift_report.is_withdrawals = False
+    
+    for entry in update.message.text.splitlines():
+        if not await shift_report._withdrawals.append_str(entry):
+            bad_lines += (entry + '\n')
+
+    if shift_report._withdrawals.quantity() > 0:
+        shift_report.is_withdrawals = True
+    
+    if not bad_lines == '' :
+        logger_msg = f'Failed to insert withdrawals:\n{bad_lines}' 
+        logger.info(logger_msg)
+        
+        msg = 'Не получилось добавить эти строки:\n'
+        msg += bad_lines
+        msg += '\n Проверь, соответствуют ли он формату, и повтори запрос'
+
+        context.user_data['parent'] = SE_WITHDRAWALS
+
+        await draw_menu (
+            msg,
+            [[ InlineKeyboardButton('Окей', callback_data='ok')]],
+            update,
+            context,
+            edit = False
+        )
+        return SE_WITHDRAWALS
+
+    logger_msg = f'Completed request' 
+    logger.info(logger_msg)
+
     await draw_main_menu(update, context, edit=False)
 
     return SE_MENU
@@ -1069,8 +1155,8 @@ async def send_report(update: Update, context: ContextTypes) -> int:
     await message(update, context, text = text)
 
     # withdrawals data
-    text = "🗒️ <b>Изъятия:</b>\n"
-    text += shift_report.withdrawals
+
+    text = shift_report._withdrawals.to_report_text()
     
     #parse by lines and add tabs
     #lines = str(context.user_data["withdrawals"]).splitlines()
@@ -1124,8 +1210,6 @@ async def shift_report_to_zero():
     shift_report = new_shift_report
     logger.info('Shift report object is set to zero')
 
-
-
 # Draw report preview for user
 async def preview_report(update: Update, context: ContextTypes) -> int:
     """Show report"""
@@ -1142,7 +1226,7 @@ async def preview_report(update: Update, context: ContextTypes) -> int:
     
     data = context.user_data
 
-    text += "\n⌚Дата заполнения: " + shift_report.date + "\n"
+    text += "\n⌚Дата заполнения: " + str(shift_report.date) + "\n"
     
     text += "\nФинансовый отчет: \n"
     text += "💵 Наличные: " + str(shift_report.finance.cash) + " ₽\n"
@@ -1160,9 +1244,8 @@ async def preview_report(update: Update, context: ContextTypes) -> int:
         text += '\nВозвраты по картам: ' + str(shift_report.finance.cards_returns) + ' ₽\n'
     
     # withdrawals data
-    text += "\n🗒️Изъятия за день:\n"
-    text += shift_report.withdrawals
-    
+    text += shift_report._withdrawals.to_report_text()
+
     #parse by lines and add tabs
     #lines = str(context.user_data["withdrawals"]).splitlines()
     #for line in lines: text += "    " + line + "\n"
@@ -1223,13 +1306,12 @@ async def start_command(update: Update, context: ContextTypes):
     '''
     await update.message.reply_text(msg)
 
-
 async def help_command(update: Update, context: ContextTypes):
     logger.info(f"/help - user {update.effective_user.full_name} entered /help command")
 
-    msg =  'Бот закрытия смены, который должен сделать жизнь чуть чуть проще\n\n'
-    msg += 'Если нужна какая то помощь, или фидбек, пиши сюды: @fruqube\n\n'
-    msg += 'Проект где на уровне альфы, так что пользуйся осторожно\n'
+    msg =  'Бот закрытия смены, который должен сделать твою жизнь чуть чуть проще\n\n'
+    msg += 'Если нужна какая то помощь, или есть какой то фидбек, пиши сюды: @fruqube\n\n'
+    msg += 'Проект еще в разработке, так что пользуйся осторожно\n'
 
     await update.message.reply_text(msg)
 
@@ -1264,6 +1346,9 @@ async def return_button(update: Update, context:ContextTypes) -> int:
 
     if parent == SE_LEFTOVERS:
         await leftovers_menu(update, context)
+
+    if parent == SE_WITHDRAWALS:
+        await withdrawals_input_menu(update, context)
 
     return parent
 
@@ -1326,7 +1411,7 @@ def main() -> None:
                 CallbackQueryHandler(shift_menu, pattern = "^" + "shift"), 
                 CallbackQueryHandler(preview_report, pattern = "^" + "preview"), 
                 CallbackQueryHandler(writeoffs_menu, pattern = "^" + "writeoffs" + "$"),
-                CallbackQueryHandler(withdrawals_menu, pattern = "^" + "withdrawals" + "$"),
+                CallbackQueryHandler(pre_withdrawals_menu, pattern = "^" + "withdrawals" + "$"),
                 CallbackQueryHandler(stoplist_menu, pattern = "^" + "stoplist" + "$")
             ],
             SE_DATE : [
@@ -1343,6 +1428,7 @@ def main() -> None:
             SE_PREVIEW: [
                 CallbackQueryHandler(decision_menu, pattern="^" + "send_report" + "$"),
                 CallbackQueryHandler(send_report, pattern="^" + "yes" + "$")            ],
+            
             SE_COMMENT: [
                 MessageHandler(filters.TEXT & (~filters.COMMAND), read_comment)
             ],
@@ -1358,6 +1444,9 @@ def main() -> None:
                 MessageHandler(filters.TEXT & (~filters.COMMAND), read_writeoffs)
             ],
             SE_WITHDRAWALS: [
+                CallbackQueryHandler(withdrawals_set_append, pattern="^" + "add" + "$"),
+                CallbackQueryHandler(withdrawals_set_rewrite, pattern="^" + "rewrite" + "$"),
+                CallbackQueryHandler(withdrawals_set_append, pattern="^" + "ok" + "$"),
                 MessageHandler(filters.TEXT & (~filters.COMMAND), read_withdrawals)
             ],
             SE_STOPLIST: [
@@ -1381,6 +1470,7 @@ def main() -> None:
     #application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), echo))
     application.add_handler(end_conv_handler)
     application.add_handler(CommandHandler('cancel', cancel_command))
+
      # Run the bot until the user presses Ctrl-C
     application.run_polling()
 
