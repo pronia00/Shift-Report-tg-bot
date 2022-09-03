@@ -210,7 +210,6 @@ class withdrawal:
     comment : str = ''
     sum : float = 0
 
-
 @dataclass 
 class Withdrawals:
     data : list[withdrawal] = field(default_factory=list)
@@ -842,8 +841,11 @@ async def pre_withdrawals_menu(update: Update, context: ContextTypes) -> int:
 
         msg += '\nТы можешь добавить к ним новые, или перезаписать эти'
         kb = [
-                [    InlineKeyboardButton('Добавить', callback_data='add')], 
-                [    InlineKeyboardButton('Перезаписать', callback_data='rewrite')]
+                [    InlineKeyboardButton('Добавить', callback_data='add'), 
+                     InlineKeyboardButton('Перезаписать', callback_data='rewrite')
+                ],
+                [    InlineKeyboardButton(_b_return, callback_data = "return")]
+
         ]
         await draw_menu(msg, kb, update, context, edit = True)
         return SE_WITHDRAWALS
