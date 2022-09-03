@@ -225,6 +225,13 @@ class Withdrawals:
     async def append_str(self, text : str) -> bool:
         parsed_data = text.partition('-')
         if parsed_data[1] == '' and str(parsed_data[2]) == '': return False
+        if parsed_data[0] == '' or parsed_data[2] == '': return False
+        
+        try:
+            float(parsed_data[2])
+            
+        except ValueError:
+            return False
 
         new_entry = withdrawal(str(parsed_data[0]), float(parsed_data[2]))
         await self.append(new_entry)
@@ -307,6 +314,7 @@ class ShiftReportClass:
 
         self.leftovers = Leftovers(0, False, 0, False)
         self.finance = FinanceReport()
+        self._withdrawals = Withdrawals()
 
 @dataclass
 class ShiftReport_DataBase:
@@ -823,9 +831,16 @@ async def pre_withdrawals_menu(update: Update, context: ContextTypes) -> int:
     context.user_data["parent_menu"] = SE_MENU
     msg : str = ''
 
+    #
     if shift_report._withdrawals.quantity() > 0:
-        msg += 'Ты можешь добавить к ним новые, или перезаписать эти'
+        msg += 'У тебя уже есть заполненые изъятия:\n'
+        
+        num = 1
+        for w in shift_report._withdrawals.data:
+            msg += f'{num}. {w.comment} - {w.sum}р \n'
+            num = num + 1
 
+        msg += '\nТы можешь добавить к ним новые, или перезаписать эти'
         kb = [
                 [    InlineKeyboardButton('Добавить', callback_data='add')], 
                 [    InlineKeyboardButton('Перезаписать', callback_data='rewrite')]
@@ -838,10 +853,10 @@ async def pre_withdrawals_menu(update: Update, context: ContextTypes) -> int:
     return SE_WITHDRAWALS
 
 async def withdrawals_set_rewrite(update: Update, context: ContextTypes) -> int:
-    query = update.callback_query
-    await query.answer()
 
     logger.info(f"User {update.effective_user.full_name} choose to rewrite withdarawals")
+    query = update.callback_query
+    await query.answer()
 
     shift_report._withdrawals._rewrite = True
 
@@ -913,7 +928,7 @@ async def read_withdrawals(update: Update, context: ContextTypes) -> int:
         
         msg = 'Не получилось добавить эти строки:\n'
         msg += bad_lines
-        msg += '\n Проверь, соответствуют ли он формату, и повтори запрос'
+        msg += '\nПроверь, соответствуют ли он формату, и повтори запрос'
 
         context.user_data['parent'] = SE_WITHDRAWALS
 
@@ -1133,7 +1148,7 @@ async def send_report(update: Update, context: ContextTypes) -> int:
     text = "<b>==== Очет закрытия смены ====</b> \n"
     
     # date and time
-    text += "\n⌚<b>Дата заполнения:</b> " + shift_report.date + "\n"
+    text += "\n⌚<b>Дата заполнения:</b> " + str(shift_report.date) + "\n"
     
     # finance report
     text += "\n<b>Финансовый отчет: </b>\n"
@@ -1215,7 +1230,7 @@ async def preview_report(update: Update, context: ContextTypes) -> int:
     """Show report"""
     
     query = update.callback_query
-
+    
     context.user_data["parent_menu"] = SE_MENU
 
     #fast check if data exist and return data of 'none' 
@@ -1396,7 +1411,7 @@ def main() -> None:
     end_conv_handler = ConversationHandler(
         entry_points=[
             CommandHandler("shift_end", start_shift_end_conversation_menu), 
-            CallbackQueryHandler(start_conversation_menu_from_query, pattern = '^' + 'start_shift_end_from_start_button' + '$')
+            CallbackQueryHandler(start_conversation_menu_from_query,  pattern = '^' + 'start_shift_end_from_start_button' + '$')
             ],
         states= {
             SE_INIT : [
