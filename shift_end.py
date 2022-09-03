@@ -210,6 +210,58 @@ class withdrawal:
     comment : str = ''
     sum : float = 0
 
+@dataclass
+class writeoff:
+    product : str = ''
+    quantity : float = 0
+    comment : str = ''
+
+
+# create parent @dataclass for Writeoffs and Withdrawals
+@dataclass
+class Writeoffs:
+    data : list[writeoff] = field(default_factory=list)
+    _rewrite : bool = True
+
+    def is_empty(self) -> bool:
+        return len(self.data) < 1
+
+    def quantity(self) -> int:
+        return len(self.data)
+
+    async def append(self, product : str, quantity : float, comment : str):
+        self.data.append(withdrawal(product, quantity, comment))
+    
+    async def append(self, entry : writeoff):
+        self.data.append(entry)
+    
+    async def set_to_zero(self):
+        self.data.clear()
+
+    async def append_str(self, text : str) -> bool:
+        try:
+            parsed_data = text.split('-')
+        except ValueError:
+            return False
+
+        if len(parsed_data) < 3:
+            return False
+
+        for x in parsed_data:
+            if x == '':
+                return False
+        try: 
+            float(parsed_data[1])
+
+        except ValueError:
+            return False
+
+        new_entry = writeoff(str(parsed_data[0]), float(parsed_data[1]), str(parsed_data[2]))
+        await self.append(new_entry)
+
+        return True
+
+        
 @dataclass 
 class Withdrawals:
     data : list[withdrawal] = field(default_factory=list)
@@ -289,6 +341,8 @@ class ShiftReportClass:
     is_comment : bool = False
 
     # writeoffs
+    _writeoffs : Writeoffs = Writeoffs()
+
     writeoffs : str = ''
     is_writeoffs : bool = False
 
@@ -314,6 +368,7 @@ class ShiftReportClass:
         self.leftovers = Leftovers(0, False, 0, False)
         self.finance = FinanceReport()
         self._withdrawals = Withdrawals()
+        self._writeoffs = Writeoffs()
 
 @dataclass
 class ShiftReport_DataBase:
@@ -785,8 +840,63 @@ async def read_comment(update: Update, context: ContextTypes) -> int:
 
     return SE_MENU
 
+async def pre_writeoffs_menu(update: Update, context: ContextTypes) -> int:
+    query = update.callback_query
+    await query.answer()
+
+    logger.info("User %s entered pre writeoffs menu", query.from_user.full_name)
+
+    context.user_data["parent_menu"] = SE_MENU
+    msg : str = ''
+
+    #
+    if shift_report._writeoffs.quantity() > 0:
+        msg += 'У тебя уже есть заполненые списания:\n'
+        
+        num = 1
+        for w in shift_report._writeoffs.data:
+            msg += f'{num}. {w.product} - {w.quantity} - {w.comment} \n'
+            num = num + 1
+
+        msg += '\nТы можешь добавить к ним новые, или перезаписать эти'
+        kb = [
+                [    InlineKeyboardButton('Добавить', callback_data='add'), 
+                     InlineKeyboardButton('Перезаписать', callback_data='rewrite')
+                ],
+                [    InlineKeyboardButton(_b_return, callback_data = "return")]
+
+        ]
+        await draw_menu(msg, kb, update, context, edit = True)
+        return SE_WRITEOFFS
+
+    else: 
+        await writeoffs_input_menu(update, context) 
+    return SE_WRITEOFFS
+
+async def writeoffs_set_rewrite(update: Update, context: ContextTypes) -> int:
+
+    logger.info(f"User {update.effective_user.full_name} choose to rewrite writeoffs")
+    query = update.callback_query
+    await query.answer()
+
+    shift_report._writeoffs._rewrite = True
+
+    await writeoffs_input_menu(update, context)
+    return SE_WRITEOFFS
+
+async def writeoffs_set_append(update: Update, context: ContextTypes) -> int:
+    query = update.callback_query
+    await query.answer()
+
+    logger.info(f"User {update.effective_user.full_name} choose to edit writeoffs")
+
+    shift_report._writeoffs._rewrite = False
+    await writeoffs_input_menu(update, context)
+    return SE_WRITEOFFS
+
+
 # Writeoffs
-async def writeoffs_menu(update: Update, context: ContextTypes) -> int: 
+async def writeoffs_input_menu(update: Update, context: ContextTypes) -> int: 
     query = update.callback_query
     await query.answer()
 
@@ -794,27 +904,69 @@ async def writeoffs_menu(update: Update, context: ContextTypes) -> int:
 
     context.user_data["parent_menu"] = SE_MENU
     
-    text = "Отправь списания за смену в формате:  \n\n"
-    text += "Продукт 1 - количество - причина\n"
-    text += "Продукт 2 - колzичество - причина\n  ..."
+    msg = "Отправь списания за смену в формате:  \n\n"
+    msg += "Продукт 1 - наименование - количество - комментарий\n"
+    msg += "Продукт 2 - наименование - количество - комментарий\n  ...\n\n"
 
     if shift_report.is_writeoffs:
-        text += "\n\nТекущие списания:\n" + shift_report.writeoffs
-        # тут можно узнать у пользователя, хочет ли он добавить что то к текущей записи, или переписать 
+        msg += "Текущие списания:\n"
+        
+        num = 1
+        for w in shift_report._writeoffs.data:
+            msg += f'{num}. {w.product} - {w.quantity} - {w.comment} \n'
+            num = num + 1
 
     await query.edit_message_text(
-        text, 
-        reply_markup= InlineKeyboardMarkup([[InlineKeyboardButton(_b_return, callback_data="return")]])
+        msg, 
+        reply_markup= InlineKeyboardMarkup([[
+            InlineKeyboardButton(_b_return, callback_data="return")
+        ]])
     )
     return SE_WRITEOFFS
 
 async def read_writeoffs(update: Update, context: ContextTypes) -> int:
     """reads writeoffs from last user's message"""
-    
-    shift_report.writeoffs = update.message.text
-    shift_report.is_writeoffs = True
+    logger_msg = f"User {update.message.from_user.full_name} sent request to insert writeoffs:\n{update.message.text}"
+    logger.info(logger_msg)
 
-    logger.info("User %s entered:\n%s", update.message.from_user.full_name, shift_report.writeoffs)
+    shift_report.writeoffs = update.message.text
+    bad_lines : str = ''
+
+    temp = update.message.text.splitlines() 
+    
+    if shift_report._writeoffs._rewrite == True:
+        await shift_report._writeoffs.set_to_zero()
+        shift_report.is_writeoffs = False
+    
+    for entry in update.message.text.splitlines():
+        if not await shift_report._writeoffs.append_str(entry):
+            bad_lines += (entry + '\n')
+
+    if shift_report._writeoffs.quantity() > 0:
+        shift_report.is_writeoffs = True
+    
+    if not bad_lines == '' :
+        logger_msg = f'Failed to insert writoffs:\n{bad_lines}' 
+        logger.info(logger_msg)
+        
+        msg = 'Не получилось добавить эти строки:\n'
+        msg += bad_lines
+        msg += '\nПроверь, соответствуют ли он формату, и повтори запрос'
+
+        context.user_data['parent'] = SE_WRITEOFFS
+
+        await draw_menu (
+            msg,
+            [[ InlineKeyboardButton('Окей', callback_data='ok')]],
+            update,
+            context,
+            edit = False
+        )
+        return SE_WRITEOFFS
+
+    logger_msg = f'Completed request' 
+    logger.info(logger_msg)
+
     await draw_main_menu(update, context, edit=False)
 
     return SE_MENU
@@ -849,7 +1001,7 @@ async def pre_withdrawals_menu(update: Update, context: ContextTypes) -> int:
         ]
         await draw_menu(msg, kb, update, context, edit = True)
         return SE_WITHDRAWALS
-    
+
     else: 
         await withdrawals_input_menu(update, context) 
     return SE_WITHDRAWALS
@@ -1427,7 +1579,7 @@ def main() -> None:
                 CallbackQueryHandler(leftovers_menu, pattern = "^" + "leftovers"),
                 CallbackQueryHandler(shift_menu, pattern = "^" + "shift"), 
                 CallbackQueryHandler(preview_report, pattern = "^" + "preview"), 
-                CallbackQueryHandler(writeoffs_menu, pattern = "^" + "writeoffs" + "$"),
+                CallbackQueryHandler(pre_writeoffs_menu, pattern = "^" + "writeoffs" + "$"),
                 CallbackQueryHandler(pre_withdrawals_menu, pattern = "^" + "withdrawals" + "$"),
                 CallbackQueryHandler(stoplist_menu, pattern = "^" + "stoplist" + "$")
             ],
@@ -1458,6 +1610,9 @@ def main() -> None:
                 MessageHandler(filters.TEXT & (~filters.COMMAND), shift_input)
             ],
             SE_WRITEOFFS: [
+                CallbackQueryHandler(writeoffs_set_append, pattern="^" + "add" + "$"),
+                CallbackQueryHandler(writeoffs_set_rewrite, pattern="^" + "rewrite" + "$"),
+                CallbackQueryHandler(writeoffs_set_append, pattern="^" + "ok" + "$"),
                 MessageHandler(filters.TEXT & (~filters.COMMAND), read_writeoffs)
             ],
             SE_WITHDRAWALS: [
