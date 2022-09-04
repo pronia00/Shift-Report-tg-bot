@@ -261,6 +261,18 @@ class Writeoffs:
 
         return True
 
+    def to_report_text(self) -> str:
+        msg = ''
+        if len(self.data) <= 0:
+            msg += '🗒️ <b>Списаний за смену не было </b>\n'
+        else:
+            msg += "🗒️ <b>Списания:</b>\n"
+            num = 1
+            for w in shift_report._writeoffs.data:
+                msg += f'{num}. {w.product} - {w.quantity} - {w.comment} \n'
+                num = num + 1
+        return msg
+
         
 @dataclass 
 class Withdrawals:
@@ -306,7 +318,7 @@ class Withdrawals:
             text += "🗒️ <b>Изъятия:</b>\n"
             i = 1
             for w in self.data:
-                text += f'\n          {i}. {w.comment} - {w.sum}р'
+                text += f'\n  {i}. {w.comment} - {w.sum}р'
                 i = i + 1
         
         return text
@@ -1414,14 +1426,9 @@ async def preview_report(update: Update, context: ContextTypes) -> int:
     
     # withdrawals data
     text += shift_report._withdrawals.to_report_text()
-
-    #parse by lines and add tabs
-    #lines = str(context.user_data["withdrawals"]).splitlines()
-    #for line in lines: text += "    " + line + "\n"
-
+    text += '\n\n'
     # writeoffs data
-    text += "\n\n💀Списания за день:\n"
-    text += shift_report.writeoffs
+    text += shift_report._writeoffs.to_report_text()
 
     # leftovers data
     text += "\n\nОстатки продуктов:\n"
