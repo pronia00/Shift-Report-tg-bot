@@ -1253,7 +1253,7 @@ async def shift_menu (update: Update, context:ContextTypes) -> int:
 
     query = update.callback_query
     await query.answer()
-
+    
     context.user_data["parent_menu"] = SE_MENU
     logger.info("User %s chose shift table menu", query.from_user.full_name)
 
