@@ -2,7 +2,7 @@ from socket import MsgFlag
 import config
 
 from array import array
-from ast import Call
+from ast import Call, parse
 from cgitb import handler, text
 from contextvars import Context
 from doctest import SKIP
@@ -87,13 +87,14 @@ _b_extra_money = "Избыток / Недостача"
 _b_reciept_num = "Количество чеков"
 _b_all_in_one = "Заполнить все вместе"
 
+_report_header = 'Отчет по смене'
 # ✔️ ✅ 👌 🔥 ☑️ 
 _b_check = "✅"
 
 _b_milk = "Молоко"
 _b_espresso_blend = "Эспрессо бленд "
 
-_b_manual_date = "Ввести дату лапками"
+_b_manual_date = "Другая дата"
 
 _b_return = "⇐ Назад"
 
@@ -264,9 +265,9 @@ class Writeoffs:
     def to_report_text(self) -> str:
         msg = ''
         if len(self.data) <= 0:
-            msg += '🗒️ Списаний за смену не было \n'
+            msg += '🗒️ <b>Списаний нет</b> \n'
         else:
-            msg += "🗒️ Списания:\n"
+            msg += "🗒️ <b>Списания:</b>\n"
             num = 1
             for w in shift_report._writeoffs.data:
                 msg += f'{num}. {w.product} - {num_to_str(w.quantity)} - {w.comment} \n'
@@ -313,12 +314,12 @@ class Withdrawals:
     def to_report_text(self) -> str:
         text = ''
         if len(self.data) <= 0:
-            text += '🗒️ Изъятий за смену не было \n'
+            text += '🗒️ <b>Изъятий нет</b> \n'
         else:
-            text += "🗒️ Изъятия: \n"
+            text += "🗒️ <b>Изъятия:</b> \n"
             i = 1
             for w in self.data:
-                text += f'\n  {i}. {w.comment} - {num_to_str(w.sum)}р'
+                text += f'  {i}. {w.comment} - {num_to_str(w.sum)}р\n'
                 i = i + 1
         
         return text
@@ -528,20 +529,20 @@ async def draw_menu(text : str, buttons : InlineKeyboardMarkup, update: Update, 
         await query.answer()
         await query.edit_message_text(
             text,
-            reply_markup = InlineKeyboardMarkup(buttons)
+            reply_markup = InlineKeyboardMarkup(buttons), 
+            parse_mode='HTML'
         )
     else : 
         await update.message.reply_text(
             text, 
-            reply_markup = InlineKeyboardMarkup(buttons)
+            reply_markup = InlineKeyboardMarkup(buttons), 
+            parse_mode='HTML'
         )
 
 # draws shift report menu buttons
 async def draw_main_menu (update: Update, context: ContextTypes, edit: bool):
 
-    text = "== Отчет закрытия смены ==\n\n"\
-        "Выбери пункт для заполнения: "
-
+    text = f'<b>Отчет по смене  |  Surf Coffee x {shift_report.spot_name}</b>'
     logger.info("Drawing main menu")
 
     if edit == True:
@@ -550,12 +551,14 @@ async def draw_main_menu (update: Update, context: ContextTypes, edit: bool):
         await query.edit_message_text(
             text,
             #reply_markup = InlineKeyboardMarkup(_keyboard_shift_end_main)
-            reply_markup = await _check_buttons_main_keyboard(update, context)
+            reply_markup = await _check_buttons_main_keyboard(update, context),
+            parse_mode='HTML'
         )
     else :
         await update.message.reply_text(
-            text, 
-            reply_markup = await _check_buttons_main_keyboard(update, context)
+            text,
+            reply_markup = await _check_buttons_main_keyboard(update, context),
+            parse_mode='HTML'
         )
 
 # Date
@@ -567,28 +570,30 @@ async def date_menu (update: Update, context:ContextTypes) -> int:
 
     logger.info(f"User {query.from_user.full_name} entered date menu")
     
-    today_date_time = datetime.now().strftime("Cейчас: %d/%m %H:%M") 
+    today_date_time = datetime.now().strftime("Сегодня") 
 
     context.user_data["parent_menu"] = SE_MENU
     keyboard = [
-        [InlineKeyboardButton(today_date_time, callback_data = "auto_date")], 
-        [InlineKeyboardButton(_b_manual_date, callback_data = "manual_date")]
+        [InlineKeyboardButton(today_date_time, callback_data = "auto_date"), 
+        InlineKeyboardButton('Другой день', callback_data = "manual_date")],
+        [InlineKeyboardButton(_b_return, callback_data = 'return')]
     ]
 
-    text = "Заполни дату отчета: \n\n"
+    text = f'<b>Выбери дату заполнения:   </b>\n\n'
     if "date" in context.user_data:
         _date_time = shift_report.date
     else :
         _date_time = datetime.today().date()
     
-    text += "Текущее значение : \n" + str(_date_time)
+    #text += f'Текущее значение : { str(_date_time)}'
 
     # parent const for return button navigation
     context.user_data ["parent_menu"] = SE_MENU
 
     await query.edit_message_text(
         text,
-        reply_markup = InlineKeyboardMarkup(keyboard)
+        reply_markup = InlineKeyboardMarkup(keyboard), 
+        parse_mode = 'HTML'
     )
     return SE_DATE
 
@@ -630,9 +635,10 @@ async def manual_date (update: Update, context:ContextTypes) -> int:
     context.user_data["parent_menu"] = SE_DATE
 
     await query.edit_message_text(
-        text = "Введи дату заполнения отчета: ", 
+        text = "<b>Введи дату заполнения: </b> ", 
         reply_markup 
-            = InlineKeyboardMarkup([[InlineKeyboardButton(_b_return, callback_data='return')]])
+            = InlineKeyboardMarkup([[InlineKeyboardButton(_b_return, callback_data='return')]]),
+            parse_mode = 'HTML'
     )
     return SE_DATE
 
@@ -640,7 +646,8 @@ async def manual_date (update: Update, context:ContextTypes) -> int:
 async def finance_text():
     sr = shift_report
 
-    text = "Наличные : " + str(sr.finance.cash) + " ₽\n"
+    text = '<b>Выбери и заполни финансы: </b>\n\n'
+    text += "Наличные : " + str(sr.finance.cash) + " ₽\n"
     text += "Безнал : " + str(sr.finance.cards) + " ₽\n"
     text += "Кол-во чеков : " + str(sr.finance.reciepts) + "\n\n"
 
@@ -686,15 +693,17 @@ async def finance_kb():
 async def finance_menu (update: Update, context:ContextTypes) -> int: 
     """Starts the date menu conversation """
     logger.info(f"User {update.effective_user.full_name} entered finance report menu" )
-
+    
     query = update.callback_query
     await query.answer()
 
     data = ["cash", "cards", "reciepts", "cash_returns", "cards_returns", "incass", "change_money", "extra_money"]
+    context.user_data ["parent_menu"] = SE_MENU
 
     await query.edit_message_text(
         await finance_text(),
-        reply_markup = await finance_kb()
+        reply_markup = await finance_kb(),
+        parse_mode='HTML'
     )
     return SE_FINANCE
 
@@ -710,7 +719,8 @@ async def draw_finance_menu (update: Update, context:ContextTypes) -> int:
 
     await update.message.reply_text(
         await finance_text(),
-        reply_markup = await finance_kb()
+        reply_markup = await finance_kb(), 
+        parse_mode='HTML'
     )
 
 async def finance_field (update: Update, context: ContextTypes) -> int:
@@ -724,75 +734,86 @@ async def finance_field (update: Update, context: ContextTypes) -> int:
 
     # вывод сообщения о вводе значения
     await query.edit_message_text(
-        "Введи значение : ",
-        reply_markup= InlineKeyboardMarkup([[InlineKeyboardButton(_b_return, callback_data="return")]])
+        "<b>Введи значение : </b>",
+        reply_markup= InlineKeyboardMarkup([[InlineKeyboardButton(_b_return, callback_data="return")]]),
+        parse_mode='HTML'
     )
     return SE_FINANCE
 
 async def finance_field_input (update: Update, context: ContextTypes) -> int:
     user = update.message.from_user
 
-    #here you can catch the <all in one> query, and send it to func - parser
-    if (context.user_data["finance_entry"] == "read_all"):
-        #parse(update.message.text)
-        values = ["cash", "cards", "incass", "reciepts"]
-        list_of_values = update.message.text.splitlines()
+    context.user_data["parent_menu"] = SE_FINANCE
+    try:
+        #here you can catch the <all in one> query, and send it to func - parser
+        if (context.user_data["finance_entry"] == "read_all"):
+            #parse(update.message.text)
+            values = ["cash", "cards", "incass", "reciepts"]
+            list_of_values = update.message.text.splitlines()
 
-        logger.info("User %s entered values: \n%s", user.full_name, update.message.text)
-        
-        #bug - only all lines input is valid (((
-        for x in [0, 1, 2, 3]:
-            context.user_data[values[x]] = list_of_values[x]
+            logger.info(f'User {update.effective_user.full_name} entered values: {update.message.text}\n')
+            
+            #bug - only all lines input is valid (((
+            for x in [0, 1, 2, 3]:
+                context.user_data[values[x]] = list_of_values[x]
 
-        shift_report.finance.cash = list_of_values[0]
-        shift_report.finance.cards = list_of_values[1]
-        shift_report.finance.incass = list_of_values[2]
-        shift_report.finance.reciepts = list_of_values[3]
+            shift_report.finance.cash = list_of_values[0]
+            shift_report.finance.cards = list_of_values[1]
+            shift_report.finance.incass = list_of_values[2]
+            shift_report.finance.reciepts = list_of_values[3]
 
-        shift_report.finance.is_cash = True 
-        shift_report.finance.is_cards = True
-        shift_report.finance.is_incass = True
-        shift_report.finance.is_reciepts = True
-
-    else: 
-        logger.info("User %s entered %s = %s", user.full_name, context.user_data["finance_entry"], update.message.text)
-        
-        entry = context.user_data["finance_entry"]
-        data = float(update.message.text)
-
-        if entry == 'cash':
-            shift_report.finance.cash = data
-            shift_report.finance.is_cash = True
-
-        elif entry == 'cards':
-            shift_report.finance.cards = data
+            shift_report.finance.is_cash = True 
             shift_report.finance.is_cards = True
-
-        elif entry == 'reciepts':
-            shift_report.finance.reciepts = data
-            shift_report.finance.is_reciepts = True
-            
-        elif entry == 'incass':
-            shift_report.finance.incass = data
             shift_report.finance.is_incass = True
+            shift_report.finance.is_reciepts = True
+
+        else: 
+            logger.info(f'User {update.effective_user.full_name} entered {context.user_data["finance_entry"]} = {update.message.text}')
             
-        elif entry == 'cash_returns':
-            shift_report.finance.cash_returns = data
-            shift_report.finance.is_cash_returns = True
+            entry = context.user_data["finance_entry"]
+            data = float(update.message.text)
 
-        elif entry == 'cards_returns':
-            shift_report.finance.cards_returns = data
-            shift_report.finance.is_cards_returns = True
+            if entry == 'cash':
+                shift_report.finance.cash = data
+                shift_report.finance.is_cash = True
 
-        elif entry == 'change_money': 
-            shift_report.finance.change = data
-            shift_report.finance.is_change = True
+            elif entry == 'cards':
+                shift_report.finance.cards = data
+                shift_report.finance.is_cards = True
+
+            elif entry == 'reciepts':
+                shift_report.finance.reciepts = data
+                shift_report.finance.is_reciepts = True
+                
+            elif entry == 'incass':
+                shift_report.finance.incass = data
+                shift_report.finance.is_incass = True
+                
+            elif entry == 'cash_returns':
+                shift_report.finance.cash_returns = data
+                shift_report.finance.is_cash_returns = True
+
+            elif entry == 'cards_returns':
+                shift_report.finance.cards_returns = data
+                shift_report.finance.is_cards_returns = True
+
+            elif entry == 'change_money': 
+                shift_report.finance.change = data
+                shift_report.finance.is_change = True
+            
+            elif entry == 'extra_money':
+                shift_report.finance.extra = data
+                shift_report.finance.is_extra = True
+    except:
+        context.user_data['parent'] = SE_FINANCE
         
-        elif entry == 'extra_money':
-            shift_report.finance.extra = data
-            shift_report.finance.is_extra = True
+        await update.message.reply_text(
+            '<b>Значение не соответствует формату, попробуй снова</b>',
+            reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton(_b_return, callback_data="return")]]), 
+            parse_mode='HTML'
+        )
+        return SE_FINANCE
 
-        #context.user_data[context.user_data["finance_entry"]] = update.message.text
     await draw_finance_menu(update, context)
 
     return SE_FINANCE
@@ -807,17 +828,16 @@ async def finance_read_all(update: Update, context:ContextTypes) -> int:
     context.user_data["finance_entry"] = query.data
 
     # можно динамический сформировать текст                 
-    text = "Введи цифровые значения в таком порядке, каждое в новой строке: \n\n"
-    text += "Выручка наличными (" + str(shift_report.finance.cash) + "₽) \n"
-    text += "Выручка по картам (" + str(shift_report.finance.cards) + "₽) \n"
-    text += "Инкассация (" + str(shift_report.finance.incass) + "₽) \n"
-    text += "Количество чеков (" + str(shift_report.finance.reciepts) + "шт) \n\n"
-    text += "Остальные значения, при необоходимости, можно ввести по отдельности в меню фин отчета\n"
-    text += "Значение размена по умолчанию равно 5000"
+    text = "<b>Введи значения в таком порядке, каждое в новой строке:</b> \n\n"
+    text += "наличные (" + str(shift_report.finance.cash) + "₽) \n"
+    text += "безнал (" + str(shift_report.finance.cards) + "₽) \n"
+    text += "инкассация (" + str(shift_report.finance.incass) + "₽) \n"
+    text += "кол-во чеков (" + str(shift_report.finance.reciepts) + "шт) \n\n"
 
     await query.edit_message_text(
         text,
-        reply_markup= InlineKeyboardMarkup([[InlineKeyboardButton(_b_return, callback_data="return")]])
+        reply_markup= InlineKeyboardMarkup([[InlineKeyboardButton(_b_return, callback_data="return")]]), 
+        parse_mode='HTML'
     )
     return SE_FINANCE
 
@@ -830,13 +850,14 @@ async def comment_menu(update: Update, context: ContextTypes) -> int:
 
     context.user_data["parent_menu"] = SE_MENU
 
-    text = "Отправь комментарий о смене: \n"
+    text = "<b>Отправь комментарий о смене: </b> \n"
     if shift_report.is_comment:
-        text += "Текущий комментарий:\n\n" + shift_report.comment
+        text += "\nТекущий комментарий:\n" + shift_report.comment
 
     await query.edit_message_text(
         text, 
-        reply_markup= InlineKeyboardMarkup([[InlineKeyboardButton(_b_return, callback_data="return")]])
+        reply_markup= InlineKeyboardMarkup([[InlineKeyboardButton(_b_return, callback_data="return")]]),
+        parse_mode='HTML'
     )
     return SE_COMMENT
 
@@ -863,7 +884,7 @@ async def pre_writeoffs_menu(update: Update, context: ContextTypes) -> int:
 
     #
     if shift_report._writeoffs.quantity() > 0:
-        msg += 'У тебя уже есть заполненые списания:\n'
+        msg += '<b>У тебя уже есть заполненые списания:</b>\n'
         
         num = 1
         for w in shift_report._writeoffs.data:
@@ -916,9 +937,9 @@ async def writeoffs_input_menu(update: Update, context: ContextTypes) -> int:
 
     context.user_data["parent_menu"] = SE_MENU
     
-    msg = "Отправь списания за смену в формате:  \n\n"
+    msg = "<b>Отправь списания за смену в формате:</b>\n\n"
     msg += "Продукт 1 - количество - комментарий\n"
-    msg += "Продукт 2 - количество - комментарий\n  ...\n\n"
+    msg += "Продукт 2 - количество - комментарий\n\n"
 
     if shift_report.is_writeoffs:
         msg += "Текущие списания:\n"
@@ -932,7 +953,8 @@ async def writeoffs_input_menu(update: Update, context: ContextTypes) -> int:
         msg, 
         reply_markup= InlineKeyboardMarkup([[
             InlineKeyboardButton(_b_return, callback_data="return")
-        ]])
+        ]]),
+        parse_mode='HTML'
     )
     return SE_WRITEOFFS
 
@@ -961,7 +983,7 @@ async def read_writeoffs(update: Update, context: ContextTypes) -> int:
         logger_msg = f'Failed to insert writoffs:\n{bad_lines}' 
         logger.info(logger_msg)
         
-        msg = 'Не получилось добавить эти строки:\n'
+        msg = '<b>Не получилось добавить эти строки</b>:\n'
         msg += bad_lines
         msg += '\nПроверь, соответствуют ли он формату, и повтори запрос'
 
@@ -996,7 +1018,7 @@ async def pre_withdrawals_menu(update: Update, context: ContextTypes) -> int:
 
     #
     if shift_report._withdrawals.quantity() > 0:
-        msg += 'У тебя уже есть заполненые изъятия:\n'
+        msg += '<b>У тебя уже есть заполненые изъятия</b>:\n\n'
         
         num = 1
         for w in shift_report._withdrawals.data:
@@ -1047,9 +1069,9 @@ async def withdrawals_input_menu(update: Update, context: ContextTypes) -> int:
 
     context.user_data["parent_menu"] = SE_MENU
 
-    msg = "Отправь изьятия за смену в формате:  \n\n"
+    msg = "<b>Отправь изьятия за смену в формате:</b>  \n\n"
     msg += "Поставщик 1 - Сумма\n"
-    msg += "Поставщик 2 - Сумма\n...\n\n"
+    msg += "Поставщик 2 - Сумма\n\n"
     
     if shift_report.is_withdrawals:
         msg += "Текущие изъятия:\n"
@@ -1063,7 +1085,8 @@ async def withdrawals_input_menu(update: Update, context: ContextTypes) -> int:
         msg, 
         reply_markup= InlineKeyboardMarkup([[
             InlineKeyboardButton(_b_return, callback_data="return")
-        ]])
+        ]]),
+        parse_mode='HTML'
     )
     return SE_WITHDRAWALS
 
@@ -1092,7 +1115,7 @@ async def read_withdrawals(update: Update, context: ContextTypes) -> int:
         logger_msg = f'Failed to insert withdrawals:\n{bad_lines}' 
         logger.info(logger_msg)
         
-        msg = 'Не получилось добавить эти строки:\n'
+        msg = '<b>Не получилось добавить эти строки</b>:\n'
         msg += bad_lines
         msg += '\nПроверь, соответствуют ли он формату, и повтори запрос'
 
@@ -1123,15 +1146,16 @@ async def stoplist_menu(update: Update, context: ContextTypes) -> int:
 
     context.user_data['parent_menu'] = SE_MENU
 
-    text = "Заполни стоп лист в любом формате:"
+    text = "<b>Заполни стоп лист в любом формате:</b>"
 
     if shift_report.is_stop_list:
-        text += f"\n\nСтоп лист:\n {str(shift_report.stop_list)}"
+        text += f"\n\nТекущий стоп лист:\n{str(shift_report.stop_list)}"
         # тут можно узнать у пользователя, хочет ли он добавить что то к текущей записи, или переписать 
 
     await query.edit_message_text(
         text, 
-        reply_markup= InlineKeyboardMarkup([[InlineKeyboardButton(_b_return, callback_data="return")]])
+        reply_markup= InlineKeyboardMarkup([[InlineKeyboardButton(_b_return, callback_data="return")]]),
+        parse_mode='HTML'
     )
     return SE_STOPLIST
 
@@ -1161,7 +1185,7 @@ async def leftovers_menu(update: Update, context: ContextTypes) -> int:
     #if "espresso_blend" not in context.user_data:
     #    context.user_data["espresso_blend"] = 0
     
-    text = "Количество остатков: \n\n"
+    text = "<b>Количество остатков:</b>\n\n"
     text += "Молоко: " + str(shift_report.leftovers.milk) + "л\n"
     text += "Эспрессо блэнд: " + str(shift_report.leftovers.espresso_blend) + "кг\n"
 
@@ -1169,7 +1193,8 @@ async def leftovers_menu(update: Update, context: ContextTypes) -> int:
 
     await query.edit_message_text(
         text,
-        reply_markup = InlineKeyboardMarkup(_keyboard_leftovers)
+        reply_markup = InlineKeyboardMarkup(_keyboard_leftovers), 
+        parse_mode='HTML'
     )
     return SE_LEFTOVERS
 
@@ -1181,7 +1206,7 @@ async def draw_leftovers_menu (update: Update, context:ContextTypes) -> int:
 
     context.user_data["parent_menu"] = SE_MENU   
 
-    text = "Количество остатков: \n\n"
+    text = "<b>Количество остатков:</b> \n\n"
     text += "Молоко: " + str(shift_report.leftovers.milk) + "л\n"
     text += "Эспрессо блэнд: " + str(shift_report.leftovers.espresso_blend) + "кг\n"
 
@@ -1194,7 +1219,8 @@ async def draw_leftovers_menu (update: Update, context:ContextTypes) -> int:
 
     await update.message.reply_text(
         text,
-        reply_markup = InlineKeyboardMarkup(_keyboard_leftovers)
+        reply_markup = InlineKeyboardMarkup(_keyboard_leftovers), 
+        parse_mode='HTML'
     )
 
 
@@ -1221,8 +1247,9 @@ async def leftovers_field (update: Update, context: ContextTypes) -> int:
 
     # вывод сообщения о вводе значения
     await query.edit_message_text(
-        "Введи значение : ",
-        reply_markup= InlineKeyboardMarkup([[InlineKeyboardButton(_b_return, callback_data="return")]])
+        "<b>Введи значение</b> : ",
+        reply_markup= InlineKeyboardMarkup([[InlineKeyboardButton(_b_return, callback_data="return")]]), 
+        parse_mode='HTML'
     )
     return SE_LEFTOVERS
 
@@ -1257,7 +1284,7 @@ async def shift_menu (update: Update, context:ContextTypes) -> int:
     context.user_data["parent_menu"] = SE_MENU
     logger.info("User %s chose shift table menu", query.from_user.full_name)
 
-    text = "Введи кто был на смене в формате:\n Имя 1 - Часы\n Имя 2 - Часы\n"
+    text = "<b>Введи кто был на смене в формате: </b>\n Имя 1 - Часы\n Имя 2 - Часы\n"
     
     if shift_report.is_shift_team:
         text += "Текущая инфа: \n" + shift_report.shift_team
@@ -1265,7 +1292,8 @@ async def shift_menu (update: Update, context:ContextTypes) -> int:
     await query.edit_message_text(
         text, 
         reply_markup
-            = InlineKeyboardMarkup([[InlineKeyboardButton(_b_return, callback_data="return")]])
+            = InlineKeyboardMarkup([[InlineKeyboardButton(_b_return, callback_data="return")]]),
+        parse_mode='HTML'
     )
     return SE_SHIFT
 
@@ -1283,8 +1311,7 @@ async def shift_input(update: Update, context:ContextTypes) -> int:
     return SE_MENU
 
 # Send message to chat
-async def message(update, context, text = "", silent = False):
-    chat = -322780644
+async def message(update, context, text = "", silent = False, chat = 0):
     msg = await context.bot.send_message(chat_id= chat, text= text, parse_mode='HTML', disable_notification = silent, read_timeout = 15)
     return msg
 
@@ -1306,22 +1333,20 @@ async def send_report(update: Update, context: ContextTypes) -> int:
 
     logger.info("User %s chose to send report", query.from_user.full_name)
     chat = config.SURF_X_MORE_CHAT
+    #chat = config.SURF_X_MORE_TEST_CHAT
 
-    #await context.bot.send_chat_action(chat_id= chat, action=telegram.constants.ChatAction.TYPING)
-
-    # header
-    text = "<b>ОТЧЕТ ПО СМЕНЕ </b> \n"
+    # date and time    
+    text = f"<b>Отчет по смене | Surf Coffee x {shift_report.spot_name}</b>"
 
     # date and time
-    text += "\n📅 " + shift_report.date
-    # who sent report-user.full_name
-    text += "\n🙋‍♂️ Заполнил : " + update.effective_user.full_name
+    time_str = f'{datetime.today().time().hour}:{datetime.today().time().minute}'
+    text += f'\n\n📅 {str(shift_report.date)}  🕒 {time_str}'
     
-    await message(update, context, text = text)
+    await message(update, context, text = text, silent=True, chat=chat)
 
     text = ''
     # finance report
-    text += "\n<b>Финансы: </b>\n"
+    text += "<b>Финансы: </b>\n\n"
     text += "💵 Наличные: " + num_to_str(shift_report.finance.cash) + " ₽\n"
     text += "💳 Карты: " + num_to_str(shift_report.finance.cards) + " ₽\n\n"
     
@@ -1331,13 +1356,19 @@ async def send_report(update: Update, context: ContextTypes) -> int:
     text += "💰 Инкассация: " + num_to_str(shift_report.finance.incass) + " ₽\n"
     text += "🪙 Размен: " + num_to_str(shift_report.finance.change) + " ₽\n"
     
+    await message(update, context, text = text, silent=True, chat = chat)
+    
+    text = ''
     if (shift_report.finance.is_cash_returns):
-        text += '\n🔙 Возвраты наличных: ' + num_to_str(shift_report.finance.cash_returns) + ' ₽\n'
+        text += '🔙 Возвраты наличных: ' + num_to_str(shift_report.finance.cash_returns) + ' ₽\n'
         
     if (shift_report.finance.is_cards_returns):
-        text += '\n🔙 Возвраты по картам: ' + num_to_str(shift_report.finance.cards_returns) + ' ₽\n'
+        text += '🔙 Возвраты по картам: ' + num_to_str(shift_report.finance.cards_returns) + ' ₽\n'
     
-    await message(update, context, text = text, silent=True)
+    if (shift_report.finance.is_cash_returns == shift_report.finance.is_cash_returns == False):
+        text += '🔙 Возвратов не было'
+    
+    await message(update, context, text = text, silent=True, chat = chat)
 
     # withdrawals data
 
@@ -1346,43 +1377,51 @@ async def send_report(update: Update, context: ContextTypes) -> int:
     #parse by lines and add tabs
     #lines = str(context.user_data["withdrawals"]).splitlines()
     #for line in lines: text += "    " + line + "\n"
-    await message(update, context, text = text, silent=True)
+    await message(update, context, text = text, silent=True, chat = chat)
 
     # writeoffs data
     text = shift_report._writeoffs.to_report_text()
-    await message(update, context, text = text, silent=True)
+    await message(update, context, text = text, silent=True, chat = chat)
 
     # leftovers data
     text = "<b>Остатки продуктов:</b>\n"
     text += "🥛 Молоко: " + num_to_str(shift_report.leftovers.milk) + " л\n"
     text += "🫘 Блэнд: " + num_to_str(shift_report.leftovers.espresso_blend) + " кг\n"
-    await message(update, context, text = text, silent=True)
+    await message(update, context, text = text, silent=True, chat = chat)
     
     # stop list data
-    text = "\n⛔ Стоп лист:\n"
-    text += shift_report.stop_list
-    await message(update, context, text = text, silent=True)
+    text = "<b>⛔ Стоп лист:</b>\n"
+    for s in shift_report.stop_list.splitlines():
+        text += '  ' + s + '\n'
+    await message(update, context, text = text, silent=True, chat = chat)
     
     # shift data
-    text = "🏄‍♂️ В смене отработали бариста: \n"
+    text = "🏄‍♂️ <b>В смене отработали бариста:</b> \n"
+
     for s in shift_report.shift_team.splitlines():
-        text += s + ' часов\n'
-    text += '\n\n'
-    await message(update, context, text = text, silent=True)
+        text += '  ' + s + ' часов\n'
+    await message(update, context, text = text, silent=True, chat = chat)
     
     # comment
-    text = "💬Комментарий:\n"
-    text += shift_report.comment
-    await message(update, context, text = text, silent=True)
+    text = "💬 <b>Комментарий:</b>\n"
+    for s in shift_report.comment.splitlines():
+        text += '  ' + s + '\n'
+    await message(update, context, text = text, silent=True, chat = chat)
 
     context.user_data["parent_menu"] = SE_MENU
+    
+
+    # who sent report-user.full_name
+    text = "\n🙋‍♂️ <b>Заполнил: </b> @" + update.effective_user.username
+    
+    await message(update, context, text = text, chat = chat)
+    
+    shift_report._is_sent = True
+    #await shift_report_to_zero()    
 
     await query.edit_message_text(
         'Отчет успешно отправлен'
     )
-    
-    shift_report._is_sent = True
-    #await shift_report_to_zero()    
 
     logger.info("Report is sent")
     logger.info("Shift report conversation completed")
@@ -1404,62 +1443,70 @@ async def preview_report(update: Update, context: ContextTypes) -> int:
 
     logger.info("User %s chose preview", query.from_user.full_name)
     
-    text = "<b>ПРЕДПРОСМОТР | ОТЧЕТ ПО СМЕНЕ </b> \n"
+    text = f"<b>Отчет по смене | Surf Coffee x {shift_report.spot_name}</b>"
 
     # date and time
-    text += "\n📅 " + shift_report.date
-    # who sent report-user.full_name
-    text += "\n🙋‍♂️ Заполнил : - " + update.effective_user.full_name
+    time_str = f'{datetime.today().time().hour}:{datetime.today().time().minute}'
+    text += f'\n\n📅 {str(shift_report.date)}  🕒 {time_str}'
     
     text += '\n\n'
 
     # finance report
-    text += "\n<b>Финансовый отчет: </b>\n"
-    text += "💵 Наличные: " + num_to_str(shift_report.finance.cash) + " ₽\n"
-    text += "💳 Карты: " + num_to_str(shift_report.finance.cards) + " ₽\n\n"
+    text += f'\n<b> Финансы: </b>\n\n'
+    cash = num_to_str(shift_report.finance.cash)
+    text += f'💵 Наличные: {cash} ₽\n'
+    text += f"💳 Карты: {num_to_str(shift_report.finance.cards)} ₽\n\n"
     
     text += "🧾 Чеки: " + num_to_str(shift_report.finance.reciepts) + "  "
     text += "🤑 Средний: " + num_to_str(shift_report.finance.medium_reciept()) + ' ₽\n\n'
     
     text += "💰 Инкассация: " + num_to_str(shift_report.finance.incass) + " ₽\n"
-    text += "🪙 Размен: " + num_to_str(shift_report.finance.change) + " ₽\n\n"
+    text += "🪙 Размен: " + num_to_str(shift_report.finance.change) + " ₽\n"
     
     if (shift_report.finance.is_cash_returns):
         text += '\n🔙 Возвраты наличных: ' + num_to_str(shift_report.finance.cash_returns) + ' ₽\n'
         
     if (shift_report.finance.is_cards_returns):
         text += '\n🔙 Возвраты по картам: ' + num_to_str(shift_report.finance.cards_returns) + ' ₽\n'
+    
     # withdrawals data
     text += '\n\n'
     
     text += shift_report._withdrawals.to_report_text()
+    text += '\n\n'
 
     # writeoffs data
     text += shift_report._writeoffs.to_report_text()
     text += '\n\n'  
 
     # leftovers data
-    text += "Остатки продуктов:\n"
+    text += "<b>Остатки продуктов:</b>\n"
     text += "🥛 Молоко: " + num_to_str(shift_report.leftovers.milk) + " л\n"
     text += "🫘 Блэнд: " + num_to_str(shift_report.leftovers.espresso_blend) + " кг\n"
     text += '\n\n'
     
     # stop list data
-    text += "\n⛔ Стоп лист:\n"
-    text += shift_report.stop_list
-    text += '\n\n'
+    text += "<b>⛔ Стоп лист:</b>\n"
+    for s in shift_report.stop_list.splitlines():
+        text += '  ' + s + '\n'
+    text += '\n'
     
     # shift data
-    text += "🏄‍♂️ В смене отработали бариста: \n"
+    text += "🏄‍♂️ <b>В смене отработали бариста:</b> \n"
 
     for s in shift_report.shift_team.splitlines():
-        text += s + ' часов\n'
-    text += '\n\n'
+        text += '  ' + s + ' часов\n'
+    text += '\n'
     
     # comment
-    text += "💬 <b>Комментарий:</b>\n\n"
-    text += shift_report.comment
+    text += "💬 <b>Комментарий:</b>\n"
+    for s in shift_report.comment.splitlines():
+        text += '  ' + s + '\n'
     
+    
+    # who sent report-user.full_name
+    text += "\n🙋‍♂️ <b>Заполнил: </b> @" + update.effective_user.username
+
     await query.answer()
     await query.edit_message_text(
         text, 
@@ -1470,10 +1517,17 @@ async def preview_report(update: Update, context: ContextTypes) -> int:
         parse_mode='HTML'
     )
 
+
     return SE_PREVIEW
 
-def num_to_str(x : float, digits : int = 1) -> str:
-    if (x % 1) == 0 : 
+def num_to_str(x, digits : int = 1) -> str:
+    if (type(x) == int):
+        return str(x)
+    elif (type(x) == str):
+        return x
+    elif (type(x) != float):
+        return str(x)
+    elif (x % 1 == 0): 
         return str(int(x))
     else:
         return str(round(x, digits))
