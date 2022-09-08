@@ -264,12 +264,12 @@ class Writeoffs:
     def to_report_text(self) -> str:
         msg = ''
         if len(self.data) <= 0:
-            msg += '🗒️ <b>Списаний за смену не было </b>\n'
+            msg += '🗒️ Списаний за смену не было \n'
         else:
-            msg += "🗒️ <b>Списания:</b>\n"
+            msg += "🗒️ Списания:\n"
             num = 1
             for w in shift_report._writeoffs.data:
-                msg += f'{num}. {w.product} - {w.quantity} - {w.comment} \n'
+                msg += f'{num}. {w.product} - {num_to_str(w.quantity)} - {w.comment} \n'
                 num = num + 1
         return msg
 
@@ -313,12 +313,12 @@ class Withdrawals:
     def to_report_text(self) -> str:
         text = ''
         if len(self.data) <= 0:
-            text += '🗒️ <b> Изъятий за смену не было </b>\n'
+            text += '🗒️ Изъятий за смену не было \n'
         else:
-            text += "🗒️ <b>Изъятия:</b>\n"
+            text += "🗒️ Изъятия: \n"
             i = 1
             for w in self.data:
-                text += f'\n  {i}. {w.comment} - {w.sum}р'
+                text += f'\n  {i}. {w.comment} - {num_to_str(w.sum)}р'
                 i = i + 1
         
         return text
@@ -917,8 +917,8 @@ async def writeoffs_input_menu(update: Update, context: ContextTypes) -> int:
     context.user_data["parent_menu"] = SE_MENU
     
     msg = "Отправь списания за смену в формате:  \n\n"
-    msg += "Продукт 1 - наименование - количество - комментарий\n"
-    msg += "Продукт 2 - наименование - количество - комментарий\n  ...\n\n"
+    msg += "Продукт 1 - количество - комментарий\n"
+    msg += "Продукт 2 - количество - комментарий\n  ...\n\n"
 
     if shift_report.is_writeoffs:
         msg += "Текущие списания:\n"
@@ -1283,10 +1283,9 @@ async def shift_input(update: Update, context:ContextTypes) -> int:
     return SE_MENU
 
 # Send message to chat
-async def message(update, context, text = ""):
+async def message(update, context, text = "", silent = False):
     chat = -322780644
-    msg = await context.bot.send_message( chat_id= chat,text= text, parse_mode='HTML')
-
+    msg = await context.bot.send_message(chat_id= chat, text= text, parse_mode='HTML', disable_notification = silent, read_timeout = 15)
     return msg
 
 async def check_data(update, context):
@@ -1309,31 +1308,36 @@ async def send_report(update: Update, context: ContextTypes) -> int:
     chat = config.SURF_X_MORE_CHAT
 
     #await context.bot.send_chat_action(chat_id= chat, action=telegram.constants.ChatAction.TYPING)
-    
+
     # header
-    text = "<b>==== Очет закрытия смены ====</b> \n"
-    
+    text = "<b>ОТЧЕТ ПО СМЕНЕ </b> \n"
+
     # date and time
-    text += "\n⌚<b>Дата заполнения:</b> " + str(shift_report.date) + "\n"
-    
-    # finance report
-    text += "\n<b>Финансовый отчет: </b>\n"
-    text += "💵 <b>Наличные: </b>" + str(shift_report.finance.cash) + " ₽\n"
-    text += "💳 <b>Карты: </b>" + str(shift_report.finance.cards) + " ₽\n\n"
-    
-    text += "🧾 <b>Чеки: </b>" + str(shift_report.finance.reciepts) + "  "
-    text += "🤑 <b>Средний: </b>" + str(shift_report.finance.medium_reciept()) + ' ₽\n\n'
-    
-    text += "💰<b>Инкассация: </b>" + str(shift_report.finance.incass) + " ₽\n"
-    text += "🪙<b>Размен: </b>" + str(shift_report.finance.change) + " ₽\n\n"
-    
-    if (shift_report.finance.is_cash_returns):
-        text += '\n<b>Возвраты наличных: </b>' + str(shift_report.finance.cash_returns) + ' ₽\n'
-        
-    if (shift_report.finance.is_cards_returns):
-        text += '\n<b>Возвраты по картам: </b>' + str(shift_report.finance.cards_returns) + ' ₽\n'
+    text += "\n📅 " + shift_report.date
+    # who sent report-user.full_name
+    text += "\n🙋‍♂️ Заполнил : " + update.effective_user.full_name
     
     await message(update, context, text = text)
+
+    text = ''
+    # finance report
+    text += "\n<b>Финансы: </b>\n"
+    text += "💵 Наличные: " + num_to_str(shift_report.finance.cash) + " ₽\n"
+    text += "💳 Карты: " + num_to_str(shift_report.finance.cards) + " ₽\n\n"
+    
+    text += "🧾 Чеки: " + num_to_str(shift_report.finance.reciepts) + "  "
+    text += "🤑 Средний: " + num_to_str(shift_report.finance.medium_reciept()) + ' ₽\n\n'
+    
+    text += "💰 Инкассация: " + num_to_str(shift_report.finance.incass) + " ₽\n"
+    text += "🪙 Размен: " + num_to_str(shift_report.finance.change) + " ₽\n"
+    
+    if (shift_report.finance.is_cash_returns):
+        text += '\n🔙 Возвраты наличных: ' + num_to_str(shift_report.finance.cash_returns) + ' ₽\n'
+        
+    if (shift_report.finance.is_cards_returns):
+        text += '\n🔙 Возвраты по картам: ' + num_to_str(shift_report.finance.cards_returns) + ' ₽\n'
+    
+    await message(update, context, text = text, silent=True)
 
     # withdrawals data
 
@@ -1342,39 +1346,39 @@ async def send_report(update: Update, context: ContextTypes) -> int:
     #parse by lines and add tabs
     #lines = str(context.user_data["withdrawals"]).splitlines()
     #for line in lines: text += "    " + line + "\n"
+    await message(update, context, text = text, silent=True)
 
     # writeoffs data
-    text += "\n\n💀 <b>Списания:</b>\n"
-    text += str(shift_report.writeoffs)
+    text = shift_report._writeoffs.to_report_text()
+    await message(update, context, text = text, silent=True)
 
     # leftovers data
-    text += "\n\n<b>Остатки продуктов:</b>\n"
-    text += "🥛 <b>Молоко: </b>" + str(shift_report.leftovers.milk) + " л\n"
-    text += "🫘 <b>Блэнд: </b>" + str(shift_report.leftovers.espresso_blend) + " кг\n"
-    await message(update, context, text = text)
+    text = "<b>Остатки продуктов:</b>\n"
+    text += "🥛 Молоко: " + num_to_str(shift_report.leftovers.milk) + " л\n"
+    text += "🫘 Блэнд: " + num_to_str(shift_report.leftovers.espresso_blend) + " кг\n"
+    await message(update, context, text = text, silent=True)
     
     # stop list data
-    text = "\n⛔ <b>Стоп лист:</b>\n"
+    text = "\n⛔ Стоп лист:\n"
     text += shift_report.stop_list
-    await message(update, context, text = text)
+    await message(update, context, text = text, silent=True)
     
     # shift data
-    text = "🏄‍♂️ <b>Работку работали:</b>\n"
-    text += shift_report.shift_team
-    await message(update, context, text = text)
+    text = "🏄‍♂️ В смене отработали бариста: \n"
+    for s in shift_report.shift_team.splitlines():
+        text += s + ' часов\n'
+    text += '\n\n'
+    await message(update, context, text = text, silent=True)
     
     # comment
-    text = "💬<b>Комментарий:</b>\n"
+    text = "💬Комментарий:\n"
     text += shift_report.comment
-    
-    # who sent report-user.full_name
-    text += "\n\n🙋‍♂️Заполнил - " + update.effective_user.full_name
-    await message(update, context, text = text)
+    await message(update, context, text = text, silent=True)
 
     context.user_data["parent_menu"] = SE_MENU
 
     await query.edit_message_text(
-        'Отчет отправлен :3'
+        'Отчет успешно отправлен'
     )
     
     shift_report._is_sent = True
@@ -1396,61 +1400,65 @@ async def preview_report(update: Update, context: ContextTypes) -> int:
     """Show report"""
     
     query = update.callback_query
-    
     context.user_data["parent_menu"] = SE_MENU
 
-    #fast check if data exist and return data of 'none' 
-    data_or_x = lambda x : 'none' if ('check_' + x) not in data else data[x]
-
     logger.info("User %s chose preview", query.from_user.full_name)
-    text = "Предпросмотр отчета смены: \n"
     
-    data = context.user_data
+    text = "<b>ПРЕДПРОСМОТР | ОТЧЕТ ПО СМЕНЕ </b> \n"
 
-    text += "\n⌚Дата заполнения: " + str(shift_report.date) + "\n"
+    # date and time
+    text += "\n📅 " + shift_report.date
+    # who sent report-user.full_name
+    text += "\n🙋‍♂️ Заполнил : - " + update.effective_user.full_name
     
-    text += "\nФинансовый отчет: \n"
-    text += "💵 Наличные: " + str(shift_report.finance.cash) + " ₽\n"
-    text += "💳 Карты: " + str(shift_report.finance.cards) + " ₽\n\n"
+    text += '\n\n'
+
+    # finance report
+    text += "\n<b>Финансовый отчет: </b>\n"
+    text += "💵 Наличные: " + num_to_str(shift_report.finance.cash) + " ₽\n"
+    text += "💳 Карты: " + num_to_str(shift_report.finance.cards) + " ₽\n\n"
     
-    text += "🧾 Чеки: " + str(shift_report.finance.reciepts) + "  "
-    text += "🤑 Средний: " + str(shift_report.finance.medium_reciept())
+    text += "🧾 Чеки: " + num_to_str(shift_report.finance.reciepts) + "  "
+    text += "🤑 Средний: " + num_to_str(shift_report.finance.medium_reciept()) + ' ₽\n\n'
     
-    text += "💰Инкассация: " + str(shift_report.finance.incass) + " ₽\n"
-    text += "🪙Размен: " + str(shift_report.finance.change) + " ₽\n\n"
+    text += "💰 Инкассация: " + num_to_str(shift_report.finance.incass) + " ₽\n"
+    text += "🪙 Размен: " + num_to_str(shift_report.finance.change) + " ₽\n\n"
     
     if (shift_report.finance.is_cash_returns):
-        text += 'Возвраты наличных: ' + str(shift_report.finance.cash_returns) + ' ₽\n'
+        text += '\n🔙 Возвраты наличных: ' + num_to_str(shift_report.finance.cash_returns) + ' ₽\n'
+        
     if (shift_report.finance.is_cards_returns):
-        text += '\nВозвраты по картам: ' + str(shift_report.finance.cards_returns) + ' ₽\n'
-    
+        text += '\n🔙 Возвраты по картам: ' + num_to_str(shift_report.finance.cards_returns) + ' ₽\n'
     # withdrawals data
-    text += shift_report._withdrawals.to_report_text()
     text += '\n\n'
+    
+    text += shift_report._withdrawals.to_report_text()
+
     # writeoffs data
     text += shift_report._writeoffs.to_report_text()
+    text += '\n\n'  
 
     # leftovers data
-    text += "\n\nОстатки продуктов:\n"
-    text += "  🥛Молоко: " + str(shift_report.leftovers.milk) + " л\n"
-    text += "  🫘Блэнд: " + str(shift_report.leftovers.espresso_blend) + " кг\n"
+    text += "Остатки продуктов:\n"
+    text += "🥛 Молоко: " + num_to_str(shift_report.leftovers.milk) + " л\n"
+    text += "🫘 Блэнд: " + num_to_str(shift_report.leftovers.espresso_blend) + " кг\n"
+    text += '\n\n'
     
     # stop list data
-    text += "\n⛔Стоп лист:\n"
+    text += "\n⛔ Стоп лист:\n"
     text += shift_report.stop_list
+    text += '\n\n'
     
     # shift data
-    text += "\n\n🏄‍♂️В смене отработали человечки:\n"
-    text += shift_report.shift_team
+    text += "🏄‍♂️ В смене отработали бариста: \n"
+
+    for s in shift_report.shift_team.splitlines():
+        text += s + ' часов\n'
+    text += '\n\n'
     
     # comment
-    text += "\n\n💬Комментарий о смене:\n"
+    text += "💬 <b>Комментарий:</b>\n\n"
     text += shift_report.comment
-    
-
-    # who sent report
-    shift_report.report_sent_by = update.effective_user.full_name
-    text += "\n\n🙋‍♂️Заполнил - " + shift_report.report_sent_by
     
     await query.answer()
     await query.edit_message_text(
@@ -1458,10 +1466,17 @@ async def preview_report(update: Update, context: ContextTypes) -> int:
         reply_markup
             = InlineKeyboardMarkup([[
                 InlineKeyboardButton("Отправить отчет", callback_data="send_report"),
-                InlineKeyboardButton(_b_return, callback_data="return")]])
+                InlineKeyboardButton(_b_return, callback_data="return")]]),
+        parse_mode='HTML'
     )
 
     return SE_PREVIEW
+
+def num_to_str(x : float, digits : int = 1) -> str:
+    if (x % 1) == 0 : 
+        return str(int(x))
+    else:
+        return str(round(x, digits))
 
 async def start_command(update: Update, context: ContextTypes):
     
