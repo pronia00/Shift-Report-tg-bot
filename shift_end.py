@@ -1394,7 +1394,8 @@ async def send_report(update: Update, context: ContextTypes) -> int:
     for s in shift_report.stop_list.splitlines():
         text += '  ' + s + '\n'
     await message(update, context, text = text, silent=True, chat = chat)
-    
+    await message(update, context, text = text, silent=False, chat = config.SURF_X_MORE_MAIN_CHAT)
+
     # shift data
     text = "🏄‍♂️ <b>В смене отработали бариста:</b> \n"
 
