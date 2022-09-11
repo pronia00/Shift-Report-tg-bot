@@ -1709,7 +1709,7 @@ def main() -> None:
             CommandHandler("cancel", cancel)
         ],
     )
-
+    
     # on different commands - answer in Telegram
     application.add_handler(CommandHandler('start', start_command))
     application.add_handler(CommandHandler('help', help_command))
@@ -1722,7 +1722,6 @@ def main() -> None:
 
      # Run the bot until the user presses Ctrl-C
     application.run_polling()
-
 
 if __name__ == "__main__":
     main()
